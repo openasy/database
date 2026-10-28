@@ -1,0 +1,2278 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "OpenAsy Database API",
+    "version": "0.1.0",
+    "summary": "Why the database is slow: the slowest queries, who blocks whom, replication lag, connections and query plans.",
+    "description": "Every screen of Database uses this API, and so can your scripts (ADR 0014). Within `/api/v1` changes are additive only; anything removed is deprecated first (ADR 0024). Errors use Problem Details (RFC 9457).\n\nEvery operation takes the session of a signed-in person or an API token, and names the role it needs (`x-openasy-role`: viewer, editor, admin; ADR 0003). Database reads statistics and plans statements; it changes nothing on the databases it watches (ADR 0062).\n\nSign-in, members and API tokens are under `/api/v1/auth`, provided by [@openasy/auth](https://github.com/openasy/auth#routes).",
+    "license": {
+      "name": "AGPL-3.0-only",
+      "identifier": "AGPL-3.0-only"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "This Database"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Instances",
+      "description": "The database servers Database watches, and how it signs in to them."
+    },
+    {
+      "name": "Statistics",
+      "description": "What was sampled: queries, connections, transactions and lag over time."
+    },
+    {
+      "name": "Live",
+      "description": "Read from an instance when asked: locks, connections, replication and plans."
+    },
+    {
+      "name": "Product",
+      "description": "Version and overview of this Database."
+    }
+  ],
+  "paths": {
+    "/api/v1/version": {
+      "get": {
+        "operationId": "getVersion",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Version",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The running version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Version"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products": {
+      "get": {
+        "operationId": "listProducts",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Other products of this install",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "viewer",
+        "description": "Needs the viewer role. From OPENASY_PRODUCTS, for the product switcher.",
+        "responses": {
+          "200": {
+            "description": "The products.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/summary": {
+      "get": {
+        "operationId": "getSummary",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Overview",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "viewer",
+        "description": "Needs the viewer role. Every instance with its last sample and wait events.",
+        "responses": {
+          "200": {
+            "description": "The overview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Summary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "liveness",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Liveness",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The process is running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "readiness",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Readiness",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Its SQLite file answers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Its SQLite file does not answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "metrics",
+        "tags": [
+          "Product"
+        ],
+        "summary": "Prometheus metrics",
+        "security": [],
+        "description": "Each instance's last sample, as openasy_database_* gauges with an instance label.",
+        "responses": {
+          "200": {
+            "description": "Metrics in the Prometheus text format.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/instances": {
+      "get": {
+        "operationId": "listInstances",
+        "tags": [
+          "Instances"
+        ],
+        "summary": "Instances",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "viewer",
+        "description": "Needs the viewer role.",
+        "responses": {
+          "200": {
+            "description": "The instances.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createInstance",
+        "tags": [
+          "Instances"
+        ],
+        "summary": "Add an instance",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "admin",
+        "description": "Needs the admin role. It holds a password. The password is sealed with the install's key and never returned; without a key mounted, nothing is added (503). It is checked at once; one that does not answer is kept, with why.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewInstance"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The instance, with its first check.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/instances/{id}": {
+      "get": {
+        "operationId": "getInstance",
+        "tags": [
+          "Instances"
+        ],
+        "summary": "An instance",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "viewer",
+        "description": "Needs the viewer role.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The instance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateInstance",
+        "tags": [
+          "Instances"
+        ],
+        "summary": "Change an instance",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "admin",
+        "description": "Needs the admin role. Leave the password out to keep the one saved. It is checked again.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewInstance"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The instance, with its new check.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteInstance",
+        "tags": [
+          "Instances"
+        ],
+        "summary": "Delete an instance",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "admin",
+        "description": "Needs the admin role. With everything sampled of it.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/instances/{id}/check": {
+      "post": {
+        "operationId": "checkInstance",
+        "tags": [
+          "Instances"
+        ],
+        "summary": "Check an instance",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "editor",
+        "description": "Needs the editor role. Connects now and records what it is, or why it did not answer.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The instance with its check.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/instances/{id}/series": {
+      "get": {
+        "operationId": "getSeries",
+        "tags": [
+          "Statistics"
+        ],
+        "summary": "Samples over time",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "viewer",
+        "description": "Needs the viewer role. Connections, transactions, cache hits, blocked sessions and lag.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hours",
+            "in": "query",
+            "description": "The range, in hours back from now: 1 to the retention. 24 unless set.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The samples, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Series"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/instances/{id}/queries": {
+      "get": {
+        "operationId": "listQueries",
+        "tags": [
+          "Statistics"
+        ],
+        "summary": "Queries",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "viewer",
+        "description": "Needs the viewer role. Statements by their normalized text, from pg_stat_statements, with what they did in the range.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hours",
+            "in": "query",
+            "description": "The range, in hours back from now: 1 to the retention. 24 unless set.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "database",
+            "in": "query",
+            "description": "Only this database's statements.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "total (unless set), mean or calls.",
+            "schema": {
+              "enum": [
+                "total",
+                "mean",
+                "calls"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The statements that took the most time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/instances/{id}/queries/{key}": {
+      "get": {
+        "operationId": "getQuery",
+        "tags": [
+          "Statistics"
+        ],
+        "summary": "A query over time",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "viewer",
+        "description": "Needs the viewer role.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "The statement's key.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hours",
+            "in": "query",
+            "description": "The range, in hours back from now: 1 to the retention. 24 unless set.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The statement and its points.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/instances/{id}/locks": {
+      "get": {
+        "operationId": "getLocks",
+        "tags": [
+          "Live"
+        ],
+        "summary": "Who blocks whom",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "viewer",
+        "description": "Needs the viewer role. Read from the instance now: blocking chains from pg_blocking_pids(), each named by the session at its head.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The chains.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Locks"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "502": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/instances/{id}/connections": {
+      "get": {
+        "operationId": "getConnections",
+        "tags": [
+          "Live"
+        ],
+        "summary": "Connections",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "viewer",
+        "description": "Needs the viewer role. Read from the instance now, from pg_stat_activity.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The client sessions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Connections"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "502": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/instances/{id}/replication": {
+      "get": {
+        "operationId": "getReplication",
+        "tags": [
+          "Live"
+        ],
+        "summary": "Replication",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "viewer",
+        "description": "Needs the viewer role. Read from the instance now: standbys, their lag and replication slots.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Replication.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Replication"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "502": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/instances/{id}/explain": {
+      "post": {
+        "operationId": "explain",
+        "tags": [
+          "Live"
+        ],
+        "summary": "Explain a statement",
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiToken": []
+          },
+          {
+            "adminToken": []
+          }
+        ],
+        "x-openasy-role": "editor",
+        "description": "Needs the editor role. EXPLAIN without ANALYZE, in a read-only transaction over the extended protocol: the statement is planned, never run, and nothing can follow it. 422 when the database refuses it, such as for a table the monitoring role may not read.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The instance's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "502": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-openasy-session",
+        "description": "The browser session after signing in (`openasy-session` when Database runs on plain http://localhost). Requests that change something must come from the Database origin."
+      },
+      "apiToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An API token created under Settings → API tokens (`oa_database_...`): one role, always an expiry (ADR 0003)."
+      },
+      "adminToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Only when Database is started by its tests or a local script: one shared token with the admin role. A production install does not have it."
+      }
+    },
+    "responses": {
+      "Problem": {
+        "description": "An error, as RFC 9457 Problem Details.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Problem": {
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "invalid-token",
+              "invalid-json",
+              "invalid-body",
+              "conflict",
+              "not-found",
+              "not-configured",
+              "unreachable",
+              "query-failed",
+              "internal-error",
+              "unauthenticated",
+              "invalid-credentials",
+              "mfa-required",
+              "mfa-setup-required",
+              "forbidden",
+              "cross-site",
+              "rate-limited"
+            ],
+            "description": "Stable; match on this."
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "ProductLink": {
+        "type": "object",
+        "required": [
+          "id",
+          "url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The product's id, such as vpn or alerts."
+          },
+          "url": {
+            "type": "string",
+            "description": "Where it is opened."
+          }
+        }
+      },
+      "ProductList": {
+        "type": "object",
+        "required": [
+          "products"
+        ],
+        "properties": {
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductLink"
+            }
+          }
+        }
+      },
+      "Status": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "Version": {
+        "type": "object",
+        "required": [
+          "product",
+          "version"
+        ],
+        "properties": {
+          "product": {
+            "const": "database"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "InstanceStatus": {
+        "type": "object",
+        "required": [
+          "checkedAt",
+          "ok",
+          "error",
+          "version",
+          "role",
+          "databases",
+          "warnings"
+        ],
+        "properties": {
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Such as PostgreSQL 18.6."
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "primary",
+              "replica",
+              null
+            ]
+          },
+          "databases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The databases of the instance, for Explain."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the monitoring role lacks, or has and should not, such as superuser."
+          }
+        }
+      },
+      "Instance": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "engine",
+          "host",
+          "port",
+          "database",
+          "user",
+          "tls",
+          "ca",
+          "createdAt",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "engine": {
+            "const": "postgresql"
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "database": {
+            "type": "string",
+            "description": "The database Database connects to; pg_stat_statements is installed there."
+          },
+          "user": {
+            "type": "string"
+          },
+          "tls": {
+            "enum": [
+              "verify",
+              "require",
+              "disable"
+            ]
+          },
+          "ca": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The PEM certificate authority it verifies the server with, when set."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last check; null before the first."
+          }
+        },
+        "description": "A database server. Its password is never returned: it is sealed with the install's key when saved (ADR 0021)."
+      },
+      "InstanceList": {
+        "type": "object",
+        "required": [
+          "instances"
+        ],
+        "properties": {
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Instance"
+            }
+          }
+        }
+      },
+      "NewInstance": {
+        "type": "object",
+        "required": [
+          "name",
+          "host",
+          "user"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "maxLength": 63,
+            "description": "Such as db-prod-01; the instance label in /metrics."
+          },
+          "engine": {
+            "const": "postgresql",
+            "description": "postgresql, the only engine of this release."
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "5432 unless set."
+          },
+          "database": {
+            "type": "string",
+            "description": "postgres unless set."
+          },
+          "user": {
+            "type": "string",
+            "description": "A role that is only in pg_monitor."
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "Sealed with the install's key and never returned. Required to add; when changing, leave it out to keep the one saved."
+          },
+          "tls": {
+            "enum": [
+              "verify",
+              "require",
+              "disable"
+            ],
+            "description": "verify unless set: the certificate and the host name are checked."
+          },
+          "ca": {
+            "type": "string",
+            "description": "A PEM certificate authority, for tls verify, when the server's is not one the system trusts."
+          }
+        }
+      },
+      "Sample": {
+        "type": "object",
+        "required": [
+          "at",
+          "role",
+          "connections",
+          "maxConnections",
+          "active",
+          "idle",
+          "idleInTransaction",
+          "blocked",
+          "xactPerSecond",
+          "cacheHit",
+          "sizeBytes",
+          "lagSeconds"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "role": {
+            "enum": [
+              "primary",
+              "replica"
+            ]
+          },
+          "connections": {
+            "type": "integer"
+          },
+          "maxConnections": {
+            "type": "integer"
+          },
+          "active": {
+            "type": "integer"
+          },
+          "idle": {
+            "type": "integer"
+          },
+          "idleInTransaction": {
+            "type": "integer",
+            "description": "Sessions idle inside an open transaction: they hold their locks."
+          },
+          "blocked": {
+            "type": "integer",
+            "description": "Sessions waiting on a lock another session holds."
+          },
+          "xactPerSecond": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Commits and rollbacks per second since the sample before; null for the first sample or after a reset."
+          },
+          "cacheHit": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Blocks found in shared buffers since the sample before, 0 to 1."
+          },
+          "sizeBytes": {
+            "type": "number"
+          },
+          "lagSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "A replica: how far behind its primary. A primary: its furthest standby's replay lag."
+          }
+        }
+      },
+      "Series": {
+        "type": "object",
+        "required": [
+          "samples"
+        ],
+        "properties": {
+          "samples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Sample"
+            },
+            "description": "At most 240; longer ranges are averaged, keeping the worst of connections, blocked and lag."
+          }
+        }
+      },
+      "InstanceSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "host",
+          "version",
+          "role",
+          "ok",
+          "error",
+          "warnings",
+          "latest",
+          "waitEvents"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "primary",
+              "replica",
+              null
+            ]
+          },
+          "ok": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether it answered last; null before it was first checked."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "latest": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Sample"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "waitEvents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "event",
+                "share"
+              ],
+              "properties": {
+                "event": {
+                  "type": "string",
+                  "description": "Such as Lock: transactionid, or CPU for none."
+                },
+                "share": {
+                  "type": "number"
+                }
+              }
+            },
+            "description": "What active sessions waited on in the last hour."
+          }
+        }
+      },
+      "Summary": {
+        "type": "object",
+        "required": [
+          "instances",
+          "totals",
+          "sampleSeconds"
+        ],
+        "properties": {
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstanceSummary"
+            }
+          },
+          "totals": {
+            "type": "object",
+            "required": [
+              "instances",
+              "unreachable",
+              "blocked",
+              "maxLagSeconds",
+              "xactPerSecond",
+              "sizeBytes"
+            ],
+            "properties": {
+              "instances": {
+                "type": "integer"
+              },
+              "unreachable": {
+                "type": "integer"
+              },
+              "blocked": {
+                "type": "integer"
+              },
+              "maxLagSeconds": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "xactPerSecond": {
+                "type": "number"
+              },
+              "sizeBytes": {
+                "type": "number"
+              }
+            }
+          },
+          "sampleSeconds": {
+            "type": "integer",
+            "description": "How often each instance is sampled."
+          }
+        }
+      },
+      "QueryStat": {
+        "type": "object",
+        "required": [
+          "key",
+          "database",
+          "query",
+          "calls",
+          "totalMs",
+          "meanMs",
+          "rows",
+          "share"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The statement's id: its database and normalized text."
+          },
+          "database": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string",
+            "description": "The normalized text, constants as $1, $2."
+          },
+          "calls": {
+            "type": "number"
+          },
+          "totalMs": {
+            "type": "number"
+          },
+          "meanMs": {
+            "type": "number"
+          },
+          "rows": {
+            "type": "number"
+          },
+          "share": {
+            "type": "number",
+            "description": "Its share of the time of every statement in the range, 0 to 1."
+          }
+        }
+      },
+      "Point": {
+        "type": "object",
+        "required": [
+          "at",
+          "calls",
+          "meanMs"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "calls": {
+            "type": "number"
+          },
+          "meanMs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "QueryList": {
+        "type": "object",
+        "required": [
+          "from",
+          "totalMs",
+          "statements",
+          "databases",
+          "queries",
+          "points"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "totalMs": {
+            "type": "number"
+          },
+          "statements": {
+            "type": "integer",
+            "description": "Statements that ran in the range."
+          },
+          "databases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "database",
+                "count"
+              ],
+              "properties": {
+                "database": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueryStat"
+            },
+            "description": "At most 100."
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Point"
+            }
+          }
+        }
+      },
+      "QueryDetail": {
+        "type": "object",
+        "required": [
+          "key",
+          "database",
+          "query",
+          "calls",
+          "totalMs",
+          "meanMs",
+          "rows",
+          "points"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "database": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "calls": {
+            "type": "number"
+          },
+          "totalMs": {
+            "type": "number"
+          },
+          "meanMs": {
+            "type": "number"
+          },
+          "rows": {
+            "type": "number"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Point"
+            }
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "required": [
+          "pid",
+          "database",
+          "user",
+          "application",
+          "backendType",
+          "client",
+          "state",
+          "waitEvent",
+          "xactSeconds",
+          "stateSeconds",
+          "query",
+          "blockedBy",
+          "waitingFor"
+        ],
+        "properties": {
+          "pid": {
+            "type": "integer"
+          },
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "application": {
+            "type": "string"
+          },
+          "backendType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "client backend for a connection; autovacuum and other workers can hold locks too."
+          },
+          "client": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "waitEvent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "xactSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "How long its transaction has been open."
+          },
+          "stateSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "How long it has been in its state."
+          },
+          "query": {
+            "type": "string",
+            "description": "Its current or last statement as pg_stat_activity shows it, with its values, at most 2000 characters."
+          },
+          "blockedBy": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "The sessions holding a lock it waits for."
+          },
+          "waitingFor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The lock it waits for, such as AccessShareLock on payments."
+          }
+        }
+      },
+      "LockNode": {
+        "type": "object",
+        "required": [
+          "pid",
+          "database",
+          "user",
+          "application",
+          "backendType",
+          "client",
+          "state",
+          "waitEvent",
+          "xactSeconds",
+          "stateSeconds",
+          "query",
+          "blockedBy",
+          "waitingFor",
+          "waiters",
+          "blocking"
+        ],
+        "properties": {
+          "pid": {
+            "type": "integer"
+          },
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "application": {
+            "type": "string"
+          },
+          "backendType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "client backend for a connection; autovacuum and other workers can hold locks too."
+          },
+          "client": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "waitEvent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "xactSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "How long its transaction has been open."
+          },
+          "stateSeconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "How long it has been in its state."
+          },
+          "query": {
+            "type": "string",
+            "description": "Its current or last statement as pg_stat_activity shows it, with its values, at most 2000 characters."
+          },
+          "blockedBy": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "The sessions holding a lock it waits for."
+          },
+          "waitingFor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The lock it waits for, such as AccessShareLock on payments."
+          },
+          "waiters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LockNode"
+            }
+          },
+          "blocking": {
+            "type": "integer",
+            "description": "Sessions waiting behind it, at any depth."
+          }
+        }
+      },
+      "Locks": {
+        "type": "object",
+        "required": [
+          "chains",
+          "waiting",
+          "longestWaitSeconds"
+        ],
+        "properties": {
+          "chains": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LockNode"
+            },
+            "description": "Each chain's head: the session the others wait behind."
+          },
+          "waiting": {
+            "type": "integer"
+          },
+          "longestWaitSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "Connections": {
+        "type": "object",
+        "required": [
+          "sessions",
+          "maxConnections",
+          "byApplication"
+        ],
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          },
+          "maxConnections": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "byApplication": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "application",
+                "count"
+              ],
+              "properties": {
+                "application": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Standby": {
+        "type": "object",
+        "required": [
+          "name",
+          "client",
+          "state",
+          "syncState",
+          "writeLagSeconds",
+          "flushLagSeconds",
+          "replayLagSeconds",
+          "behindBytes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "client": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "syncState": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "writeLagSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "flushLagSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "replayLagSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "behindBytes": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      },
+      "Slot": {
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "database",
+          "active",
+          "retainedBytes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "retainedBytes": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "WAL the server keeps until the slot advances."
+          }
+        }
+      },
+      "Replication": {
+        "type": "object",
+        "required": [
+          "role",
+          "lagSeconds",
+          "standbys",
+          "slots"
+        ],
+        "properties": {
+          "role": {
+            "enum": [
+              "primary",
+              "replica"
+            ]
+          },
+          "lagSeconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "standbys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Standby"
+            }
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Slot"
+            }
+          }
+        }
+      },
+      "ExplainRequest": {
+        "type": "object",
+        "required": [
+          "sql"
+        ],
+        "properties": {
+          "sql": {
+            "type": "string",
+            "description": "One SELECT, WITH, VALUES, TABLE, INSERT, UPDATE, DELETE or MERGE. $1, $2 are allowed: the plan is then the generic one."
+          },
+          "database": {
+            "type": "string",
+            "description": "One of the instance's databases; the one it connects to unless set."
+          }
+        }
+      },
+      "PlanNode": {
+        "type": "object",
+        "required": [
+          "op",
+          "detail",
+          "startupCost",
+          "totalCost",
+          "rows",
+          "selfCost",
+          "share",
+          "hot",
+          "children"
+        ],
+        "properties": {
+          "op": {
+            "type": "string",
+            "description": "As EXPLAIN's text shows it, such as Index Scan using orders_pkey on orders."
+          },
+          "detail": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "startupCost": {
+            "type": "number"
+          },
+          "totalCost": {
+            "type": "number"
+          },
+          "rows": {
+            "type": "number"
+          },
+          "selfCost": {
+            "type": "number",
+            "description": "Its total cost less its children's."
+          },
+          "share": {
+            "type": "number",
+            "description": "selfCost as a share of the plan's cost, 0 to 1."
+          },
+          "hot": {
+            "type": "boolean",
+            "description": "The node that costs the most, when it is at least 30% of the plan."
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanNode"
+            }
+          }
+        }
+      },
+      "Plan": {
+        "type": "object",
+        "required": [
+          "database",
+          "parameters",
+          "totalCost",
+          "rows",
+          "root"
+        ],
+        "properties": {
+          "database": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "integer"
+          },
+          "totalCost": {
+            "type": "number"
+          },
+          "rows": {
+            "type": "number"
+          },
+          "root": {
+            "$ref": "#/components/schemas/PlanNode"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+# Database. It signs in to each PostgreSQL server as a role that is only in pg_monitor, samples its statistics and
+# shows the slowest queries, who blocks whom, replication lag, connections and query plans. It changes nothing on the
+# databases it watches (ADR 0062).
+#
+#   openssl rand -hex 32 > openasy-kek   # Database's key: sign-in secrets and every database password (ADR 0021). Keep it with your backups
+#   docker compose up -d
+#   docker compose logs database | grep 'no owner yet'   # the one-time link that creates the owner account
+services:
+  database:
+    image: ghcr.io/openasy/database:0.1.0
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    ports:
+      - "127.0.0.1:8080:8080" # UI and API; put a TLS proxy in front to reach it from elsewhere
+    volumes:
+      - database-data:/data # SQLite database: instances, their sealed passwords and the samples
+    secrets:
+      - openasy-kek # mounted at /run/secrets/openasy-kek; without it no instance can be added
+    environment:
+      # The address people open Database at; with a TLS proxy in front, its https:// URL.
+      DATABASE_PUBLIC_URL: ${DATABASE_PUBLIC_URL:-http://localhost:8080}
+      # How often each instance is sampled, and how long samples are kept.
+      DATABASE_SAMPLE_SECONDS: ${DATABASE_SAMPLE_SECONDS:-60}
+      DATABASE_RETENTION_DAYS: ${DATABASE_RETENTION_DAYS:-7}
+      # Sign in with your identity provider (OIDC), see the README:
+      # OPENASY_OIDC_ISSUER: https://login.example.com
+      # OPENASY_OIDC_CLIENT_ID: database
+      # OPENASY_OIDC_CLIENT_SECRET: ${OPENASY_OIDC_CLIENT_SECRET}
+
+volumes:
+  database-data:
+
+secrets:
+  openasy-kek:
+    file: ./openasy-kek
