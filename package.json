@@ -1,6 +1,6 @@
 {
   "name": "@openasy/database",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "OpenAsy Database: why the database is slow, from PostgreSQL's own statistics: the slowest queries, who blocks whom, replication lag, connections and query plans.",
   "license": "AGPL-3.0-only",

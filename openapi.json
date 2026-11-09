@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "OpenAsy Database API",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "summary": "Why the database is slow: the slowest queries, who blocks whom, replication lag, connections and query plans.",
     "description": "Every screen of Database uses this API, and so can your scripts (ADR 0014). Within `/api/v1` changes are additive only; anything removed is deprecated first (ADR 0024). Errors use Problem Details (RFC 9457).\n\nEvery operation takes the session of a signed-in person or an API token, and names the role it needs (`x-openasy-role`: viewer, editor, admin; ADR 0003). Database reads statistics and plans statements; it changes nothing on the databases it watches (ADR 0062).\n\nSign-in, members and API tokens are under `/api/v1/auth`, provided by [@openasy/auth](https://github.com/openasy/auth#routes).",
     "license": {
