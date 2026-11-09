@@ -79,7 +79,7 @@ import {
   type Summary,
   type Tls,
 } from "./api.ts";
-import { useT } from "./i18n.ts";
+import { useT, viewerLocale, setViewerLocale, fixed } from "./i18n.ts";
 import { search } from "./search.ts";
 
 const PAGES = ["queries", "locks", "replication", "connections", "explain", "instances", "setup", "account", "members", "signin", "tokens"] as const;
@@ -134,14 +134,14 @@ function useLoad<T>(call: Call, path: string | null, every?: number) {
   return [data, error, load] as const;
 }
 
-const ms = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(2)} s` : v >= 10 ? `${v.toFixed(1)} ms` : `${v.toFixed(2)} ms`);
+const ms = (v: number) => (v >= 1000 ? `${fixed(v / 1000, 2)} s` : v >= 10 ? `${fixed(v, 1)} ms` : `${fixed(v, 2)} ms`);
 const hours = (msTotal: number) => {
   const s = msTotal / 1000;
-  return s >= 3600 ? `${(s / 3600).toFixed(1)} h` : s >= 60 ? `${(s / 60).toFixed(1)} min` : `${s.toFixed(1)} s`;
+  return s >= 3600 ? `${fixed(s / 3600, 1)} h` : s >= 60 ? `${fixed(s / 60, 1)} min` : `${fixed(s, 1)} s`;
 };
-const seconds = (v: number | null) => (v === null ? "–" : v < 1 ? `${Math.round(v * 1000)} ms` : v < 60 ? `${v.toFixed(1)} s` : formatDuration(Math.round(v)));
-const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const seconds = (v: number | null) => (v === null ? "–" : v < 1 ? `${Math.round(v * 1000)} ms` : v < 60 ? `${fixed(v, 1)} s` : formatDuration(Math.round(v)));
+const clock = (iso: string) => new Date(iso).toLocaleTimeString(viewerLocale(), { hour: "2-digit", minute: "2-digit" });
+const when = (iso: string) => new Date(iso).toLocaleString(viewerLocale(), { dateStyle: "medium", timeStyle: "short" });
 const short = (s: Session) => `${s.pid}${s.application ? ` · ${s.application}` : ""}`;
 
 function Code({ children }: { children: ReactNode }) {
@@ -412,7 +412,7 @@ function PlanTree({ node, depth = 0 }: { node: PlanNode; depth?: number }) {
         </span>
         <span className="flex flex-col items-end font-mono text-2xs whitespace-nowrap text-fg-muted">
           <span className={node.hot ? "font-semibold text-warning-text" : "text-fg"}>{t("plan.share", { share: formatPercent(node.share) })}</span>
-          <span>{t("plan.numbers", { rows: formatNumber(node.rows), cost: node.totalCost.toFixed(2) })}</span>
+          <span>{t("plan.numbers", { rows: formatNumber(node.rows), cost: fixed(node.totalCost, 2) })}</span>
         </span>
       </div>
       {node.children.length > 0 && (
@@ -959,7 +959,7 @@ function ExplainPage({ call, header, instance, details }: { call: Call; header: 
           title={t("explainPage.plan")}
           description={
             explain.plan
-              ? t("explainPage.planDetail", { database: explain.plan.database, cost: explain.plan.totalCost.toFixed(2), rows: formatNumber(explain.plan.rows) })
+              ? t("explainPage.planDetail", { database: explain.plan.database, cost: fixed(explain.plan.totalCost, 2), rows: formatNumber(explain.plan.rows) })
               : t("explainPage.notRun")
           }
           aria-label={t("explainPage.plan")}
@@ -1387,6 +1387,7 @@ export function App() {
   const installBrand = useInstallBrand();
   const [theme] = useThemePreference();
   const [locale] = useLocalePreference();
+  setViewerLocale(locale);
   return (
     // The install's brand from config/brand.env (ADR 0053); OpenAsy's own look where it sets none.
     <BrandProvider theme={theme} locale={locale} brand={{ name: "OpenAsy", organization: undefined, ...installBrand }} className="min-h-screen">
